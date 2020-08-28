@@ -4,7 +4,7 @@ import Prelude
 import Effect (Effect)
 import Effect.Console (log)
 import Data.Traversable (sequence)
-import Data.Array (concatMap, intercalate, catMaybes)
+import Data.Array (concatMap, intercalate, catMaybes, cons, snoc)
 import Data.Argonaut.Decode (JsonDecodeError, decodeJson, parseJson)
 import Data.Either (Either)
 import Data.Generic.Rep (class Generic)
@@ -52,6 +52,9 @@ other = do
   pure $ Expr $ Other token
 
 or :: forall a. Expr a -> Expr a -> Expr a
+or (Or a) (Or b) = Or (a <> b)
+or (Or a) b = Or $ snoc a b
+or a (Or b) = Or $ cons a b
 or a b = Or [a, b]
 
 orop :: forall a. Parser (Expr a -> Expr a -> Expr a)
