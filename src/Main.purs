@@ -4,7 +4,7 @@ import Prelude
 import Effect (Effect)
 import Effect.Console (log)
 import Data.Traversable (sequence)
-import Data.Array (concatMap, intercalate)
+import Data.Array (concatMap, intercalate, catMaybes)
 import Data.Argonaut.Decode (JsonDecodeError, decodeJson, parseJson)
 import Data.Either (Either)
 import Data.Generic.Rep (class Generic)
@@ -41,33 +41,64 @@ simplify' e = [e]
 data Filter = Plus String
             | Minus String
             | Project String
+            | Other String
 
-filter :: Parser (Maybe Filter)
-filter = optionMaybe $ try tag <|> try project
+filter :: Parser (Expr Filter)
+filter = try tag <|> try project <|> other
+
+other :: Parser (Expr Filter)
+other = do
+  token <- regex "\\S+"
+  pure $ Expr $ Other token
+
+or :: forall a. Expr a -> Expr a -> Expr a
+or a b = Or [a, b]
+
+orop :: forall a. Parser (Expr a -> Expr a -> Expr a)
+orop = do
+  skipSpaces
+  skip $ string "or"
+  skipSpaces
+  pure or
+
+expr :: Parser (Expr Filter)
+expr = filter `chainl1` orop
+
+{-
+ expr    = term   `chainl1` addop
+ term    = factor `chainl1` mulop
+ factor  = parens expr <|> integer
+
+ mulop   =   do{ symbol "*"; return (*)   }
+         <|> do{ symbol "/"; return (div) }
+
+ addop   =   do{ symbol "+"; return (+) }
+         <|> do{ symbol "-"; return (-) }
+-}
 
 skip :: forall a. Parser a -> Parser Unit
 skip = void
 
-tag :: Parser Filter
+tag :: Parser (Expr Filter)
 tag = plus <|> minus
 
-project :: Parser Filter
+project :: Parser (Expr Filter)
 project = do
   skip $ regex "pro(j(e(ct?)?)?)?:"
   name <- regex "\\w+"
-  pure $ Project name
+  pure $ Expr $ Project name
 
-plus :: Parser Filter
+plus :: Parser (Expr Filter)
 plus = do
   skip $ string "+"
   name <- regex "[a-z]\\w+"
-  pure $ Plus name
+  pure $ Expr $ Plus name
 
-minus :: Parser Filter
+minus :: Parser (Expr Filter)
 minus = do
   skip $ string "-"
   name <- regex "[a-z]\\w+"
-  pure $ Minus name 
+  pure $ Expr $ Minus name 
 
 derive instance genericFilter :: Generic Filter _
 instance showFilter :: Show Filter where
