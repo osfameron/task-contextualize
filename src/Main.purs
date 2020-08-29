@@ -10,12 +10,13 @@ import Data.Either (Either)
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
 import Text.Parsing.StringParser
-import Text.Parsing.StringParser.Combinators (optional, chainl1, between)
+import Text.Parsing.StringParser.Combinators (optional, chainl1, between, (<?>))
 import Text.Parsing.StringParser.CodePoints
 import Data.Maybe
 import Control.Plus
 import Control.MonadZero
 import Data.String (take)
+import Control.Lazy
 
 data Expr a = Expr a
             | And (Array (Expr a))
@@ -46,7 +47,7 @@ data Filter = Plus String
             | Other String
 
 filter :: Parser (Expr Filter)
-filter = try tag <|> try project <|> other
+filter = tag <|> project <|> other
 
 other :: Parser (Expr Filter)
 other = do
@@ -64,7 +65,7 @@ or a (Or b) = Or $ cons a b
 or a b = Or [a, b]
 
 orop :: forall a. Parser (Expr a -> Expr a -> Expr a)
-orop = do
+orop = try do
   skipSpaces
   skip $ string "or"
   skipSpaces
@@ -87,28 +88,13 @@ op :: forall a. Parser (Expr a -> Expr a -> Expr a)
 op = try orop <|> try andop
 
 expr :: Parser (Expr Filter)
-expr = filter `chainl1` op
+expr    = defer (\_ -> try node) `chainl1` orop `chainl1` andop
 
--- TODO this parser doesn't work for parens expressions
-context :: Parser (Expr Filter)
-context = parens expr <|> expr
+node :: Parser (Expr Filter)
+node  = (parens $ defer (\_ -> expr)) <|> filter
 
 parens :: forall a. Parser a -> Parser a
-parens p = between
-            (string "(")
-            (string ")")
-            p
-{-
- expr    = term   `chainl1` addop
- term    = factor `chainl1` mulop
- factor  = parens expr <|> integer
-
- mulop   =   do{ symbol "*"; return (*)   }
-         <|> do{ symbol "/"; return (div) }
-
- addop   =   do{ symbol "+"; return (+) }
-         <|> do{ symbol "-"; return (-) }
--}
+parens = between (string "(")  (string ")")
 
 skip :: forall a. Parser a -> Parser Unit
 skip = void
@@ -138,6 +124,11 @@ derive instance genericFilter :: Generic Filter _
 instance showFilter :: Show Filter where
   show = genericShow
 
+type MinimalTask = forall r.
+                   { id :: Number
+                   , project :: String
+                   , tags :: Array String
+                   | r }
 
 type Task = { id :: Number
             , description :: String
@@ -152,7 +143,6 @@ type Task = { id :: Number
 
 taskFromString :: String -> Either JsonDecodeError Task
 taskFromString s = decodeJson =<< parseJson s
-
 
 j :: String
 j = "{\"id\":6,\"description\":\"Q: next distributed systems course\",\"entry\":\"20200824T080908Z\",\"modified\":\"20200825T091250Z\",\"project\":\"bbc\",\"status\":\"pending\",\"tags\":[\"arch\",\"louis.moselhi\",\"sched\"],\"uuid\":\"2b9dcbc8-3209-4501-bf8c-2d7e606ea68c\",\"annotations\":[{\"entry\":\"20200824T080916Z\",\"description\":\"https:\\/\\/www.bbc.co.uk\\/academy\\/en\\/courses\\/COU-3041\"},{\"entry\":\"20200825T090921Z\",\"description\":\"remove this, as poor reviews, ping Louis\"},{\"entry\":\"20200825T091250Z\",\"description\":\"and\\/or speak to KPL, review what value it could give\"}],\"urgency\":4.81096}"
