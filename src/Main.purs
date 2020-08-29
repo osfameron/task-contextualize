@@ -10,10 +10,12 @@ import Data.Either (Either)
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
 import Text.Parsing.StringParser
-import Text.Parsing.StringParser.Combinators
+import Text.Parsing.StringParser.Combinators (optional, chainl1, between)
 import Text.Parsing.StringParser.CodePoints
 import Data.Maybe
 import Control.Plus
+import Control.MonadZero
+import Data.String (take)
 
 data Expr a = Expr a
             | And (Array (Expr a))
@@ -49,6 +51,10 @@ filter = try tag <|> try project <|> other
 other :: Parser (Expr Filter)
 other = do
   token <- regex "\\S+"
+  guard $ (take 1 token) /= "("
+  guard $ (take 1 token) /= ")"
+  guard $ token /= "and"
+  guard $ token /= "or"
   pure $ Expr $ Other token
 
 or :: forall a. Expr a -> Expr a -> Expr a
@@ -64,9 +70,34 @@ orop = do
   skipSpaces
   pure or
 
-expr :: Parser (Expr Filter)
-expr = filter `chainl1` orop
+and :: forall a. Expr a -> Expr a -> Expr a
+and (And a) (And b) = And (a <> b)
+and (And a) b = And $ snoc a b
+and a (And b) = And $ cons a b
+and a b = And [a, b]
 
+andop :: forall a. Parser (Expr a -> Expr a -> Expr a)
+andop = do
+  skipSpaces
+  optional $ string "and"
+  optional skipSpaces
+  pure and
+
+op :: forall a. Parser (Expr a -> Expr a -> Expr a)
+op = try orop <|> try andop
+
+expr :: Parser (Expr Filter)
+expr = filter `chainl1` op
+
+-- TODO this parser doesn't work for parens expressions
+context :: Parser (Expr Filter)
+context = parens expr <|> expr
+
+parens :: forall a. Parser a -> Parser a
+parens p = between
+            (string "(")
+            (string ")")
+            p
 {-
  expr    = term   `chainl1` addop
  term    = factor `chainl1` mulop
