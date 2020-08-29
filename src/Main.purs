@@ -9,6 +9,7 @@ import Data.Argonaut.Decode (JsonDecodeError, decodeJson, parseJson)
 import Data.Either (Either)
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
+import Data.Generic.Rep.Eq
 import Text.Parsing.StringParser
 import Text.Parsing.StringParser.Combinators (optional, chainl1, between, (<?>))
 import Text.Parsing.StringParser.CodePoints
@@ -21,6 +22,12 @@ import Control.Lazy
 data Expr a = Expr a
             | And (Array (Expr a))
             | Or (Array (Expr a))
+
+instance eqExpr :: Eq a => Eq (Expr a) where
+  eq (Expr a) (Expr b) = a `eq` b 
+  eq (And as) (And bs) = as `eq` bs
+  eq (Or as) (Or bs) = as `eq` bs
+  eq _ _ = false
 
 instance showExpr :: Show a => Show (Expr a) where
   show (Expr e) = "Expr " <> (show e)
@@ -45,6 +52,8 @@ data Filter = Plus String
             | Minus String
             | Project String
             | Other String
+
+parseContext = runParser expr
 
 filter :: Parser (Expr Filter)
 filter = tag <|> project <|> other
@@ -84,9 +93,6 @@ andop = do
   optional skipSpaces
   pure and
 
-op :: forall a. Parser (Expr a -> Expr a -> Expr a)
-op = try orop <|> try andop
-
 expr :: Parser (Expr Filter)
 expr    = defer (\_ -> try node) `chainl1` orop `chainl1` andop
 
@@ -100,7 +106,13 @@ skip :: forall a. Parser a -> Parser Unit
 skip = void
 
 tag :: Parser (Expr Filter)
-tag = plus <|> minus
+tag = tag' "+" Plus
+  <|> tag' "-" Minus
+  where
+    tag' s c = do
+      skip $ string s
+      name <- regex "[a-z]\\w+"
+      pure $ Expr $ c name
 
 project :: Parser (Expr Filter)
 project = do
@@ -108,21 +120,11 @@ project = do
   name <- regex "\\w+"
   pure $ Expr $ Project name
 
-plus :: Parser (Expr Filter)
-plus = do
-  skip $ string "+"
-  name <- regex "[a-z]\\w+"
-  pure $ Expr $ Plus name
-
-minus :: Parser (Expr Filter)
-minus = do
-  skip $ string "-"
-  name <- regex "[a-z]\\w+"
-  pure $ Expr $ Minus name 
-
 derive instance genericFilter :: Generic Filter _
 instance showFilter :: Show Filter where
   show = genericShow
+instance eqFilter :: Eq Filter where
+  eq = genericEq
 
 type MinimalTask = forall r.
                    { id :: Number
