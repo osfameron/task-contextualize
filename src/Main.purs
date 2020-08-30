@@ -1,23 +1,23 @@
 module Main where
 
-import Prelude 
+import Prelude
 import Effect (Effect)
 import Effect.Console (log)
 import Data.Traversable (sequence)
-import Data.Array (concatMap, intercalate, catMaybes, cons, snoc)
+import Data.Array (concatMap, cons, intercalate, snoc, findIndex)
 import Data.Argonaut.Decode (JsonDecodeError, decodeJson, parseJson)
 import Data.Either (Either)
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
-import Data.Generic.Rep.Eq
-import Text.Parsing.StringParser
-import Text.Parsing.StringParser.Combinators (optional, chainl1, between, (<?>))
-import Text.Parsing.StringParser.CodePoints
+import Data.Generic.Rep.Eq (genericEq)
+import Text.Parsing.StringParser (Parser, runParser, try, ParseError)
+import Text.Parsing.StringParser.Combinators (between, chainl1, optional)
+import Text.Parsing.StringParser.CodePoints (regex, skipSpaces, string)
+import Control.Plus ((<|>))
+import Control.MonadZero (guard)
+import Control.Lazy (defer)
 import Data.Maybe
-import Control.Plus
-import Control.MonadZero
-import Data.String (take)
-import Control.Lazy
+import Data.String
 
 data Expr a = Expr a
             | And (Array (Expr a))
@@ -53,6 +53,7 @@ data Filter = Plus String
             | Project String
             | Other String
 
+parseContext :: String -> Either ParseError (Expr Filter)
 parseContext = runParser expr
 
 filter :: Parser (Expr Filter)
@@ -60,38 +61,36 @@ filter = tag <|> project <|> other
 
 other :: Parser (Expr Filter)
 other = do
-  token <- regex "\\S+"
-  guard $ (take 1 token) /= "("
-  guard $ (take 1 token) /= ")"
+  token <- regex "[^\\s()]+"
   guard $ token /= "and"
   guard $ token /= "or"
   pure $ Expr $ Other token
 
-or :: forall a. Expr a -> Expr a -> Expr a
-or (Or a) (Or b) = Or (a <> b)
-or (Or a) b = Or $ snoc a b
-or a (Or b) = Or $ cons a b
-or a b = Or [a, b]
+makeOr :: forall a. Expr a -> Expr a -> Expr a
+makeOr (Or a) (Or b) = Or (a <> b)
+makeOr (Or a) b = Or $ snoc a b
+makeOr a (Or b) = Or $ cons a b
+makeOr a b = Or [a, b]
 
 orop :: forall a. Parser (Expr a -> Expr a -> Expr a)
 orop = try do
   skipSpaces
   skip $ string "or"
   skipSpaces
-  pure or
+  pure makeOr
 
-and :: forall a. Expr a -> Expr a -> Expr a
-and (And a) (And b) = And (a <> b)
-and (And a) b = And $ snoc a b
-and a (And b) = And $ cons a b
-and a b = And [a, b]
+makeAnd :: forall a. Expr a -> Expr a -> Expr a
+makeAnd (And a) (And b) = And (a <> b)
+makeAnd (And a) b = And $ snoc a b
+makeAnd a (And b) = And $ cons a b
+makeAnd a b = And [a, b]
 
 andop :: forall a. Parser (Expr a -> Expr a -> Expr a)
 andop = do
   skipSpaces
   optional $ string "and"
   optional skipSpaces
-  pure and
+  pure makeAnd
 
 expr :: Parser (Expr Filter)
 expr    = defer (\_ -> try node) `chainl1` orop `chainl1` andop
@@ -126,13 +125,13 @@ instance showFilter :: Show Filter where
 instance eqFilter :: Eq Filter where
   eq = genericEq
 
-type MinimalTask = forall r.
-                   { id :: Number
+type MinimalTask r = 
+                   { id :: Int
                    , project :: String
                    , tags :: Array String
                    | r }
 
-type Task = { id :: Number
+type Task = { id :: Int
             , description :: String
             , entry :: String -- date
             , modified :: String -- date
@@ -160,3 +159,18 @@ enumerate :: forall a. Expr a -> Array (Array a)
 enumerate (Expr x) = [[x]]
 enumerate (And xs) = map join $ sequence $ map enumerate xs
 enumerate (Or xs) = concatMap enumerate xs
+
+contains :: forall a. Eq a => Array a -> a -> Boolean
+contains arr elem = isJust $ findIndex (\elem' -> elem `eq` elem') arr
+
+startsWith :: String -> Pattern -> Boolean
+startsWith s prefix = isJust $ stripPrefix prefix s
+
+check :: forall r. MinimalTask r -> Filter -> Boolean
+check m (Plus t) = m.tags `contains` t
+check m (Minus t) = not $ m.tags `contains` t
+check m (Project p) = 
+  (m.project `eq` p)
+  ||
+  (m.project `startsWith` Pattern (p <> "."))
+check _ _ = false
