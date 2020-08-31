@@ -77,9 +77,18 @@ main = runTest do
       assertNeed $ Project "fun.code.purescript"
   suite "matchContext" do
     let task = { id: 1, project: "fun.code", tags: ["foo", "bar"] }
+    let
+      assertMatch c exp =
+        Assert.equal (Right exp) $
+          matchContext <$> (parseContext c) <*> pure task
     test "Basic" do
-      Assert.equal (Right [ Plus "new" ]) $
-        matchContext <$>
-          (parseContext "pro:fun.code +new") 
-          <*>
-          pure task
+      assertMatch "pro:fun.code +new" [ Plus "new" ]
+      assertMatch "pro:fun +new" [ Plus "new" ]
+      assertMatch "pro:fun.code.purescript +new" [ Project "fun.code.purescript", Plus "new" ]
+    test "Alternatives" do
+      assertMatch "(+new +baz) or +qux" [ Plus "qux" ]
+      assertMatch "(+new +baz) or (+qux +qux)" [ Plus "new", Plus "baz" ]
+      assertMatch "+new (+foo or +baz)" [ Plus "new" ]
+      assertMatch "+new (+baz or +foo)" [ Plus "new" ]
+      assertMatch "+new (+baz or +qux)" [ Plus "new", Plus "baz" ]
+
