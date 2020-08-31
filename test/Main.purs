@@ -7,6 +7,7 @@ import Test.Unit (suite, test)
 import Test.Unit.Main (runTest)
 import Test.Unit.Assert as Assert
 import Data.Either (Either(..))
+import Data.Maybe
 
 main :: Effect Unit
 main = runTest do
@@ -77,14 +78,8 @@ main = runTest do
   suite "matchContext" do
     let task = { id: 1, project: "fun.code", tags: ["foo", "bar"] }
     test "Basic" do
-      Assert.equal (Right []) $
+      Assert.equal (Right [ Plus "new" ]) $
         matchContext <$>
-          (parseContext "(+new +new) or (pro:fun.code +new)") 
+          (parseContext "pro:fun.code +new") 
           <*>
-          Right task
-
-
-
-
-
-
+          pure task

@@ -4,7 +4,7 @@ import Prelude
 import Effect (Effect)
 import Effect.Console (log)
 import Data.Traversable (sequence)
-import Data.Array (concatMap, cons, intercalate, snoc, findIndex, filter, sortBy)
+import Data.Array (concatMap, cons, intercalate, snoc, findIndex, filter, sortBy, head)
 import Data.Argonaut.Decode (JsonDecodeError, decodeJson, parseJson)
 import Data.Either (Either)
 import Data.Generic.Rep (class Generic)
@@ -163,18 +163,20 @@ enumerate (Expr x) = [[x]]
 enumerate (And xs) = map join $ sequence $ map enumerate xs
 enumerate (Or xs) = concatMap enumerate xs
 
-countNeeds :: Array Match -> Int
-countNeeds = length <<< filter needs
+compareLength :: forall a. Array a -> Array a -> Ordering
+compareLength = compare `on` len
+  where len :: forall b. Array b -> Int
+        len = length
 
-matchContext :: forall r. Expr Filter -> MinimalTask r -> Array (Array Match)
+matchContext :: forall r. Expr Filter -> MinimalTask r -> Array Filter
 matchContext x t =
-  let
-    fs = spy "enumerate" $ enumerate x
-    ms = spy "map" $ map (map $ check t) fs
-    ms' = spy "filter" $ filter (\row -> not (Contradict `elem` row)) ms
-    ms'' = spy "sort" $ sortBy (compare `on` countNeeds)  ms'
-  in
-    ms''
+  x # enumerate
+    # map (map $ check t)
+    # filter (\row -> not (Contradict `elem` row))
+    # map (concatMap justNeeds)
+    # sortBy compareLength
+    # head
+    # fromMaybe []
 
 startsWith :: String -> Pattern -> Boolean
 startsWith s prefix = isJust $ stripPrefix prefix s
@@ -189,9 +191,9 @@ instance showMatch :: Show Match where
 instance eqMatch :: Eq Match where
   eq = genericEq
 
-needs :: Match -> Boolean
-needs (Need _) = true
-needs _ = false
+justNeeds :: Match -> Array Filter
+justNeeds (Need f) = [f]
+justNeeds _ = []
 
 satisfies :: Match -> Boolean
 satisfies Satisfy = true
