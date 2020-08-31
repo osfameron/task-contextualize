@@ -1,16 +1,19 @@
 module Test.Main where
 
-import Prelude
+import Prelude (Unit, discard, pure, show, ($), (<$>), (<*>), (<>), (==))
 import Effect (Effect)
-import Main
+import Task.Types (Expr(..), Filter(..), Match(..))
+import Task.Main
+import Task.Parse (parseContext)
+import Task.Context (check, matchContext)
 import Test.Unit (suite, test)
 import Test.Unit.Main (runTest)
 import Test.Unit.Assert as Assert
 import Data.Either (Either(..))
-import Data.Maybe
 
 main :: Effect Unit
 main = runTest do
+
   suite "Parsing (happy path)" do
     let parse context expected = Assert.equal (Right expected) (parseContext context)
     test "Atoms" do
@@ -59,14 +62,14 @@ main = runTest do
   suite "Check" do
     let task = { id: 1, project: "fun.code", tags: ["foo", "bar"] }
     test "Satisfies" do
-      let assertSatisfy f = Assert.assert ("Filter should satisfy " <> show f) $ satisfies $ check task f
+      let assertSatisfy f = Assert.assert ("Filter should satisfy " <> show f) $ check task f == Satisfy
       assertSatisfy $ Plus "foo"
       assertSatisfy $ Plus "bar"
       assertSatisfy $ Project "fun.code"
       assertSatisfy $ Project "fun"
       assertSatisfy $ Minus "qux"
     test "Contradicts" do
-      let assertContradict f = Assert.assert ("Filter should contradict " <> show f) $ contradicts $ check task f
+      let assertContradict f = Assert.assert ("Filter should contradict " <> show f) $ check task f == Contradict
       assertContradict $ Project "work"
       assertContradict $ Project "fun.cod"
       assertContradict $ Project "fun.codes"
@@ -75,6 +78,7 @@ main = runTest do
       let assertNeed f = Assert.equal (Need f) (check task f)
       assertNeed $ Plus "qux"
       assertNeed $ Project "fun.code.purescript"
+
   suite "matchContext" do
     let task = { id: 1, project: "fun.code", tags: ["foo", "bar"] }
     let
