@@ -2,7 +2,7 @@ module Test.Main where
 
 import Prelude
 import Effect (Effect)
-import Main (Expr(..), Filter(..), parseContext, check)
+import Main
 import Test.Unit (suite, test)
 import Test.Unit.Main (runTest)
 import Test.Unit.Assert as Assert
@@ -57,18 +57,23 @@ main = runTest do
 
   suite "Check" do
     let task = { id: 1, project: "fun.code", tags: ["foo", "bar"] }
-    test "Match" do
-      let assertCheck f = Assert.assert ("Filter should match " <> show f) $ check task f
-      assertCheck $ Plus "foo"
-      assertCheck $ Plus "bar"
-      assertCheck $ Project "fun.code"
-      assertCheck $ Project "fun"
-      assertCheck $ Minus "qux"
-    test "No match" do
-      let assertNoCheck f = Assert.assertFalse ("Filter should not match " <> show f) $ check task f
-      assertNoCheck $ Plus "qux"
-      assertNoCheck $ Project "fun.cod"
-      assertNoCheck $ Minus "foo"
+    test "Satisfies" do
+      let assertSatisfy f = Assert.assert ("Filter should satisfy " <> show f) $ satisfies $ check task f
+      assertSatisfy $ Plus "foo"
+      assertSatisfy $ Plus "bar"
+      assertSatisfy $ Project "fun.code"
+      assertSatisfy $ Project "fun"
+      assertSatisfy $ Minus "qux"
+    test "Contradicts" do
+      let assertContradict f = Assert.assert ("Filter should contradict " <> show f) $ contradicts $ check task f
+      assertContradict $ Project "work"
+      assertContradict $ Project "fun.cod"
+      assertContradict $ Minus "foo"
+    test "Need" do
+      let assertNeed f = Assert.equal (Need f) (check task f)
+      assertNeed $ Plus "qux"
+      assertNeed $ Project "fun.code.purescript"
+
 
 
 

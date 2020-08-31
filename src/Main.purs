@@ -166,11 +166,29 @@ contains arr elem = isJust $ findIndex (\elem' -> elem `eq` elem') arr
 startsWith :: String -> Pattern -> Boolean
 startsWith s prefix = isJust $ stripPrefix prefix s
 
-check :: forall r. MinimalTask r -> Filter -> Boolean
-check m (Plus t) = m.tags `contains` t
-check m (Minus t) = not $ m.tags `contains` t
-check m (Project p) = 
-  (m.project `eq` p)
-  ||
-  (m.project `startsWith` Pattern (p <> "."))
-check _ _ = false
+data Match = Satisfy 
+           | Contradict
+           | Need Filter
+
+derive instance genericMatch :: Generic Match _
+instance showMatch :: Show Match where
+  show = genericShow
+instance eqMatch :: Eq Match where
+  eq = genericEq
+
+satisfies :: Match -> Boolean
+satisfies Satisfy = true
+satisfies _ = false
+
+contradicts :: Match -> Boolean
+contradicts Contradict = true
+contradicts _ = false
+
+check :: forall r. MinimalTask r -> Filter -> Match
+check m (Plus t) | m.tags `contains` t = Satisfy
+check m p@(Plus _) = Need p
+check m (Minus t) | not $ m.tags `contains` t = Satisfy
+check m (Project p) | (m.project `eq` p) = Satisfy
+check m (Project p) | (m.project `startsWith` Pattern (p <> ".")) = Satisfy
+check m n@(Project p) | (p `startsWith` Pattern (m.project  <> ".")) = Need  n
+check _ _ = Contradict
