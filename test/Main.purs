@@ -68,11 +68,20 @@ main = runTest do
       let assertContradict f = Assert.assert ("Filter should contradict " <> show f) $ contradicts $ check task f
       assertContradict $ Project "work"
       assertContradict $ Project "fun.cod"
+      assertContradict $ Project "fun.codes"
       assertContradict $ Minus "foo"
     test "Need" do
       let assertNeed f = Assert.equal (Need f) (check task f)
       assertNeed $ Plus "qux"
       assertNeed $ Project "fun.code.purescript"
+  suite "matchContext" do
+    let task = { id: 1, project: "fun.code", tags: ["foo", "bar"] }
+    test "Basic" do
+      Assert.equal (Right []) $
+        matchContext <$>
+          (parseContext "(+new +new) or (pro:fun.code +new)") 
+          <*>
+          Right task
 
 
 

@@ -8,6 +8,7 @@ You can edit this file as you like.
   , "argonaut-core"
   , "arrays"
   , "console"
+  , "debug"
   , "effect"
   , "foldable-traversable"
   , "generics-rep"

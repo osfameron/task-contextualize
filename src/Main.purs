@@ -4,7 +4,7 @@ import Prelude
 import Effect (Effect)
 import Effect.Console (log)
 import Data.Traversable (sequence)
-import Data.Array (concatMap, cons, intercalate, snoc, findIndex)
+import Data.Array (concatMap, cons, intercalate, snoc, findIndex, filter, sortBy)
 import Data.Argonaut.Decode (JsonDecodeError, decodeJson, parseJson)
 import Data.Either (Either)
 import Data.Generic.Rep (class Generic)
@@ -18,6 +18,9 @@ import Control.MonadZero (guard)
 import Control.Lazy (defer)
 import Data.Maybe
 import Data.String
+import Data.Foldable (length, elem)
+import Data.Function (on)
+import Debug.Trace
 
 data Expr a = Expr a
             | And (Array (Expr a))
@@ -56,8 +59,8 @@ data Filter = Plus String
 parseContext :: String -> Either ParseError (Expr Filter)
 parseContext = runParser expr
 
-filter :: Parser (Expr Filter)
-filter = tag <|> project <|> other
+filter' :: Parser (Expr Filter)
+filter' = tag <|> project <|> other
 
 other :: Parser (Expr Filter)
 other = do
@@ -96,7 +99,7 @@ expr :: Parser (Expr Filter)
 expr    = defer (\_ -> try node) `chainl1` orop `chainl1` andop
 
 node :: Parser (Expr Filter)
-node  = (parens $ defer (\_ -> expr)) <|> filter
+node  = (parens $ defer (\_ -> expr)) <|> filter'
 
 parens :: forall a. Parser a -> Parser a
 parens = between (string "(")  (string ")")
@@ -116,7 +119,7 @@ tag = tag' "+" Plus
 project :: Parser (Expr Filter)
 project = do
   skip $ regex "pro(j(e(ct?)?)?)?:"
-  name <- regex "\\w+"
+  name <- regex "[\\w.]+"
   pure $ Expr $ Project name
 
 derive instance genericFilter :: Generic Filter _
@@ -160,8 +163,18 @@ enumerate (Expr x) = [[x]]
 enumerate (And xs) = map join $ sequence $ map enumerate xs
 enumerate (Or xs) = concatMap enumerate xs
 
-contains :: forall a. Eq a => Array a -> a -> Boolean
-contains arr elem = isJust $ findIndex (\elem' -> elem `eq` elem') arr
+countNeeds :: Array Match -> Int
+countNeeds = length <<< filter needs
+
+matchContext :: forall r. Expr Filter -> MinimalTask r -> Array (Array Match)
+matchContext x t =
+  let
+    fs = spy "enumerate" $ enumerate x
+    ms = spy "map" $ map (map $ check t) fs
+    ms' = spy "filter" $ filter (\row -> not (Contradict `elem` row)) ms
+    ms'' = spy "sort" $ sortBy (compare `on` countNeeds)  ms'
+  in
+    ms''
 
 startsWith :: String -> Pattern -> Boolean
 startsWith s prefix = isJust $ stripPrefix prefix s
@@ -176,6 +189,10 @@ instance showMatch :: Show Match where
 instance eqMatch :: Eq Match where
   eq = genericEq
 
+needs :: Match -> Boolean
+needs (Need _) = true
+needs _ = false
+
 satisfies :: Match -> Boolean
 satisfies Satisfy = true
 satisfies _ = false
@@ -185,9 +202,9 @@ contradicts Contradict = true
 contradicts _ = false
 
 check :: forall r. MinimalTask r -> Filter -> Match
-check m (Plus t) | m.tags `contains` t = Satisfy
+check m (Plus t) | t `elem` m.tags = Satisfy
 check m p@(Plus _) = Need p
-check m (Minus t) | not $ m.tags `contains` t = Satisfy
+check m (Minus t) | not $ t `elem` m.tags = Satisfy
 check m (Project p) | (m.project `eq` p) = Satisfy
 check m (Project p) | (m.project `startsWith` Pattern (p <> ".")) = Satisfy
 check m n@(Project p) | (p `startsWith` Pattern (m.project  <> ".")) = Need  n
