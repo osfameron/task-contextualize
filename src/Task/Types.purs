@@ -29,7 +29,7 @@ instance showExpr :: Show a => Show (Expr a) where
   show (Or es) = "Or [" <> intercalate ", " (map show es) <> "]"
 
 -- | `Filter` represents TaskWarrior filters.
--- | We currently handle +tag, -tag, and project:foo
+-- | We currently handle `+tag`, `-tag`, and `project:foo`
 -- | with a final `Other` constructor to represent
 -- | unhandled types.
 data Filter = Plus String
